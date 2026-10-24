@@ -1,0 +1,445 @@
+/* ============================================================
+   正文排版
+   ============================================================ */
+.md {
+  --doc-scale: 1;
+  width: 100%;
+  max-width: 828px;
+  margin: 0 auto;
+  padding: 44px 54px 160px;
+  flex: 0 0 auto;
+}
+
+.md.is-wide {
+  max-width: 1088px;
+}
+
+/* 双栏模式下预览只占半屏，收一收留白 */
+.workspace .md {
+  max-width: 760px;
+  padding: 32px 36px 120px;
+}
+
+.md-body {
+  font-size: calc(16px * var(--doc-scale));
+  line-height: 1.78;
+  color: var(--text);
+  overflow-wrap: break-word;
+}
+
+.md-body > :first-child {
+  margin-top: 0;
+}
+
+.md-body h1,
+.md-body h2,
+.md-body h3,
+.md-body h4,
+.md-body h5,
+.md-body h6 {
+  margin: 1.9em 0 0.62em;
+  font-weight: 660;
+  line-height: 1.32;
+  letter-spacing: -0.012em;
+  scroll-margin-top: 80px;
+}
+
+.md-body h1 {
+  font-size: 1.92em;
+  letter-spacing: -0.025em;
+  padding-bottom: 0.34em;
+  border-bottom: 1px solid var(--line);
+}
+
+.md-body h2 {
+  font-size: 1.4em;
+  padding-bottom: 0.3em;
+  border-bottom: 1px solid var(--line);
+}
+
+.md-body h3 {
+  font-size: 1.16em;
+}
+
+.md-body h4 {
+  font-size: 1.02em;
+}
+
+.md-body h5,
+.md-body h6 {
+  font-size: 0.95em;
+  color: var(--text-2);
+}
+
+.md-body p {
+  margin: 0 0 1.05em;
+}
+
+.md-body a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid color-mix(in srgb, var(--accent) 32%, transparent);
+  transition: border-color 0.15s ease, color 0.15s ease;
+}
+
+.md-body a:hover {
+  border-bottom-color: var(--accent);
+}
+
+.md-body strong {
+  font-weight: 660;
+}
+
+.md-body em {
+  font-style: italic;
+}
+
+.md-body del {
+  color: var(--text-3);
+}
+
+.md-body ul,
+.md-body ol {
+  margin: 0 0 1.05em;
+  padding-left: 1.55em;
+}
+
+.md-body li {
+  margin: 0.3em 0;
+}
+
+.md-body li > p {
+  margin: 0.3em 0;
+}
+
+.md-body li::marker {
+  color: var(--text-3);
+}
+
+.md-body blockquote {
+  margin: 0 0 1.2em;
+  padding: 0.75em 1.1em;
+  border-left: 3px solid color-mix(in srgb, var(--accent) 40%, var(--line-strong));
+  border-radius: 0 8px 8px 0;
+  background: var(--panel-2);
+  color: var(--text-2);
+}
+
+.md-body blockquote > :last-child {
+  margin-bottom: 0;
+}
+
+.md-body hr {
+  height: 1px;
+  border: 0;
+  margin: 2.2em 0;
+  background: var(--line);
+}
+
+.md-body img {
+  max-width: 100%;
+  height: auto;
+  border-radius: 10px;
+  display: block;
+  margin: 1.2em auto;
+}
+
+.md-body img.is-missing {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  min-height: 96px;
+  border: 1px dashed var(--line-strong);
+  background: var(--panel-2);
+}
+
+/* 行内代码 */
+.md-body code {
+  font-family: var(--font-mono);
+  font-size: 0.86em;
+  padding: 0.15em 0.38em;
+  border-radius: 5px;
+  background: color-mix(in srgb, var(--text) 7%, transparent);
+  color: color-mix(in srgb, var(--text) 88%, var(--accent));
+}
+
+/* 代码块：两种主题下都用深色，阅读对比更稳定 */
+.md-body pre {
+  position: relative;
+  margin: 0 0 1.3em;
+  padding: 16px 18px;
+  border-radius: 12px;
+  background: #101725;
+  border: 1px solid rgba(255, 255, 255, 0.05);
+  overflow-x: auto;
+  font-size: calc(13.4px * var(--doc-scale));
+  line-height: 1.68;
+  tab-size: 2;
+}
+
+.md-body pre code {
+  display: block;
+  padding: 0;
+  background: none;
+  color: #dde5f2;
+  font-size: 1em;
+  white-space: pre;
+  overflow-wrap: normal;
+}
+
+.md-body .code-copy {
+  position: absolute;
+  top: 8px;
+  right: 8px;
+  height: 24px;
+  padding: 0 9px;
+  border: 1px solid rgba(255, 255, 255, 0.12);
+  border-radius: 6px;
+  background: rgba(255, 255, 255, 0.06);
+  color: #aab6c9;
+  font-family: var(--font-sans);
+  font-size: 11px;
+  cursor: pointer;
+  opacity: 0;
+  transition: opacity 0.14s ease, background 0.14s ease, color 0.14s ease;
+}
+
+.md-body pre:hover .code-copy,
+.md-body .code-copy:focus-visible {
+  opacity: 1;
+}
+
+.md-body .code-copy:hover {
+  background: rgba(255, 255, 255, 0.12);
+  color: #fff;
+}
+
+/* 表格 */
+.md-body .table-wrap {
+  margin: 0 0 1.3em;
+  overflow-x: auto;
+}
+
+.md-body table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.92em;
+  line-height: 1.6;
+}
+
+.md-body th,
+.md-body td {
+  padding: 7px 13px;
+  border: 1px solid var(--line);
+  text-align: left;
+  vertical-align: top;
+}
+
+.md-body th {
+  background: var(--panel-2);
+  font-weight: 620;
+  white-space: nowrap;
+}
+
+.md-body tbody tr:nth-child(even) {
+  background: color-mix(in srgb, var(--panel-2) 60%, transparent);
+}
+
+.md-body .align-center {
+  text-align: center;
+}
+
+.md-body .align-right {
+  text-align: right;
+}
+
+/* 任务列表 */
+.md-body .task-list-item {
+  list-style: none;
+  margin-left: -1.45em;
+}
+
+.md-body .task-list-item input[type='checkbox'] {
+  margin: 0 0.5em 0 0;
+  vertical-align: -0.08em;
+  accent-color: var(--accent);
+  width: 13px;
+  height: 13px;
+}
+
+/* 脚注 */
+.md-body .footnotes {
+  margin-top: 2.6em;
+  padding-top: 1em;
+  border-top: 1px solid var(--line);
+  font-size: 0.88em;
+  color: var(--text-2);
+}
+
+.md-body .footnotes ol {
+  padding-left: 1.2em;
+}
+
+.md-body .footnotes hr {
+  display: none;
+}
+
+.md-body .footnote-ref a {
+  border: 0;
+  padding: 0 0.15em;
+}
+
+.md-body .footnote-backref {
+  border: 0;
+}
+
+/* kbd（正文里手写的 <kbd>） */
+.md-body kbd {
+  font-family: var(--font-mono);
+  font-size: 0.82em;
+  padding: 0.1em 0.4em;
+  border: 1px solid var(--line-strong);
+  border-bottom-width: 2px;
+  border-radius: 5px;
+  background: var(--panel-2);
+}
+
+/* Mermaid */
+.md-body .mermaid-figure {
+  margin: 0 0 1.4em;
+  padding: 18px;
+  border: 1px solid var(--line);
+  border-radius: 12px;
+  background: var(--panel-2);
+  overflow-x: auto;
+  text-align: center;
+}
+
+.md-body .mermaid-figure svg {
+  max-width: 100%;
+  height: auto;
+}
+
+.md-body .mermaid-error {
+  margin: 0 0 1.3em;
+  padding: 12px 14px;
+  border: 1px solid color-mix(in srgb, var(--danger) 35%, transparent);
+  border-radius: 10px;
+  background: color-mix(in srgb, var(--danger) 8%, transparent);
+  color: var(--danger);
+  font-size: 0.88em;
+  white-space: pre-wrap;
+}
+
+.md-body pre.mermaid-src {
+  opacity: 0.6;
+}
+
+/* 公式（KaTeX 渲染前后的占位） */
+.md-body .math-inline {
+  display: inline-block;
+  vertical-align: baseline;
+}
+
+.md-body .math-block {
+  display: block;
+  margin: 1.2em 0;
+  overflow-x: auto;
+  overflow-y: hidden;
+  text-align: center;
+}
+
+.md-body .math-block:empty,
+.md-body .math-inline:empty {
+  min-width: 0;
+}
+
+.md-body .katex {
+  font-size: 1.06em;
+}
+
+.md-body .katex-display {
+  margin: 0;
+}
+
+/* ============================================================
+   代码高亮配色（深色块专用）
+   ============================================================ */
+.hljs-comment,
+.hljs-quote {
+  color: #7d8799;
+  font-style: italic;
+}
+
+.hljs-keyword,
+.hljs-selector-tag,
+.hljs-literal,
+.hljs-type {
+  color: #c678dd;
+}
+
+.hljs-string,
+.hljs-regexp,
+.hljs-addition {
+  color: #98c379;
+}
+
+.hljs-number,
+.hljs-symbol,
+.hljs-bullet {
+  color: #d19a66;
+}
+
+.hljs-title,
+.hljs-section,
+.hljs-name,
+.hljs-selector-id,
+.hljs-selector-class {
+  color: #61afef;
+}
+
+.hljs-attr,
+.hljs-attribute,
+.hljs-variable,
+.hljs-template-variable,
+.hljs-deletion {
+  color: #e06c75;
+}
+
+.hljs-built_in,
+.hljs-class .hljs-title,
+.hljs-function .hljs-title,
+.hljs-params {
+  color: #e5c07b;
+}
+
+.hljs-meta,
+.hljs-doctag {
+  color: #56b6c2;
+}
+
+.hljs-emphasis {
+  font-style: italic;
+}
+
+.hljs-strong {
+  font-weight: 700;
+}
+
+/* ============================================================
+   响应式
+   ============================================================ */
+@media (max-width: 880px) {
+  .md {
+    padding: 28px 20px 120px;
+  }
+
+  .md-body h1 {
+    font-size: 1.7em;
+  }
+
+  .md-body pre {
+    padding: 14px;
+    font-size: 12.5px;
+  }
+}

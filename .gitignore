@@ -1,0 +1,32 @@
+# 依赖与构建产物
+node_modules/
+dist/
+release/
+
+# 本地验证输出
+shots/
+*.log
+
+# 编辑器 / 系统
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
+
+# 本地配置与证书
+*.local
+.env
+.env.*
+*.pem
+*.key
+*.p12
+.npmrc
+
+# 临时文件
+*.tsbuildinfo
+.cache/
+
+# 发布物
+*.zip
+*.7z
+

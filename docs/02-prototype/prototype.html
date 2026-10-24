@@ -1,0 +1,424 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>原型 · Markdown 预览器</title>
+    <style>
+      /* ==========================================================================
+         这是「原型」，不是产品代码：只还原布局、信息层级与交互状态，不含真实解析逻辑。
+         真实实现见 /src，两者视觉语言保持一致。
+         ========================================================================== */
+      :root {
+        --font: -apple-system, BlinkMacSystemFont, 'Segoe UI', 'Microsoft YaHei UI', 'Microsoft YaHei',
+          system-ui, sans-serif;
+        --mono: 'Cascadia Code', Consolas, ui-monospace, monospace;
+        --bg: #f5f6f9;
+        --panel: #fff;
+        --panel-2: #fafbfd;
+        --text: #171d2b;
+        --text-2: #56606f;
+        --text-3: #8b94a3;
+        --line: #e7e9ef;
+        --line-2: #d6dae3;
+        --hover: #f1f3f8;
+        --accent: #4f46e5;
+        --accent-soft: #eef1ff;
+        --shadow: 0 8px 24px rgba(16, 24, 40, 0.08);
+      }
+      * { box-sizing: border-box; }
+      html, body { margin: 0; height: 100%; }
+      body {
+        font-family: var(--font);
+        background: var(--bg);
+        color: var(--text);
+        font-size: 14px;
+        -webkit-font-smoothing: antialiased;
+      }
+      .app { display: flex; min-height: 100vh; }
+
+      /* 侧栏 */
+      .sidebar {
+        width: 300px;
+        flex: none;
+        background: var(--panel);
+        border-right: 1px solid var(--line);
+        display: flex;
+        flex-direction: column;
+        position: sticky;
+        top: 0;
+        height: 100vh;
+      }
+      .brand { display: flex; align-items: center; gap: 10px; padding: 16px 16px 14px; }
+      .brand-mark {
+        width: 30px; height: 30px; border-radius: 9px; flex: none;
+        background: linear-gradient(145deg, #4f46e5, #7f6cf0);
+        color: #fff; font-weight: 700; display: grid; place-items: center; font-size: 15px;
+      }
+      .brand-text { display: flex; flex-direction: column; line-height: 1.35; }
+      .brand-text strong { font-size: 13.5px; }
+      .brand-text span { font-size: 11.5px; color: var(--text-3); }
+
+      .tabs { display: flex; gap: 4px; padding: 0 12px 10px; }
+      .tab {
+        flex: 1; height: 32px; border: 0; border-radius: 8px; background: none;
+        color: var(--text-3); font: inherit; font-size: 12.5px; font-weight: 600;
+        cursor: pointer; display: flex; align-items: center; justify-content: center; gap: 6px;
+      }
+      .tab.is-active { background: var(--accent-soft); color: var(--accent); }
+      .tab .count {
+        font-size: 10.5px; padding: 1px 5px; border-radius: 999px;
+        background: rgba(79, 70, 229, 0.12);
+      }
+
+      .side-actions { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; padding: 0 12px 10px; }
+      .btn {
+        height: 34px; padding: 0 12px; border-radius: 9px; border: 1px solid var(--line);
+        background: var(--panel-2); color: var(--text-2); font: inherit; font-size: 12.5px;
+        display: inline-flex; align-items: center; justify-content: center; gap: 6px;
+        cursor: pointer; white-space: nowrap;
+      }
+      .btn:hover { background: var(--hover); }
+      .btn-primary { background: var(--accent); border-color: transparent; color: #fff; }
+
+      .search {
+        margin: 0 12px 10px; height: 34px; border-radius: 9px; background: var(--hover);
+        display: flex; align-items: center; gap: 8px; padding: 0 10px; color: var(--text-3);
+        font-size: 12.5px;
+      }
+
+      .tree { padding: 0 8px; overflow: auto; flex: 1; }
+      .tree-title {
+        font-size: 10.5px; font-weight: 600; color: var(--text-3);
+        margin: 10px 8px 4px; letter-spacing: 0.04em;
+      }
+      .file {
+        display: flex; align-items: center; gap: 8px; width: 100%;
+        padding: 7px 8px; border: 0; border-radius: 8px; background: none;
+        color: var(--text-2); font: inherit; font-size: 13px; text-align: left; cursor: pointer;
+      }
+      .file:hover { background: var(--hover); }
+      .file.is-active { background: var(--accent-soft); color: var(--accent); font-weight: 600; }
+      .file .size { margin-left: auto; font-size: 10.5px; color: var(--text-3); }
+
+      .outline { padding: 4px 8px; overflow: auto; flex: 1; display: none; }
+      .outline.is-on { display: block; }
+      .tree.is-off { display: none; }
+      .ol-item {
+        display: block; width: 100%; padding: 6px 10px; border: 0; border-left: 2px solid transparent;
+        border-radius: 0 7px 7px 0; background: none; color: var(--text-3); font: inherit;
+        font-size: 12.5px; text-align: left; cursor: pointer;
+      }
+      .ol-item:hover { background: var(--hover); color: var(--text-2); }
+      .ol-item.lv2 { padding-left: 20px; }
+      .ol-item.lv3 { padding-left: 32px; }
+      .ol-item.is-active { border-left-color: var(--accent); color: var(--accent); font-weight: 600; }
+
+      .side-foot {
+        border-top: 1px solid var(--line); background: var(--panel-2);
+        padding: 12px; text-align: center; font-size: 12.5px;
+      }
+      .side-foot button {
+        border: 0; background: none; color: var(--accent); font: inherit; font-size: 12.5px; cursor: pointer;
+      }
+      .sep { display: inline-block; width: 3px; height: 3px; border-radius: 50%; background: var(--line-2); margin: 0 8px; vertical-align: middle; }
+
+      /* 主区 */
+      .main { flex: 1; min-width: 0; display: flex; flex-direction: column; }
+      .toolbar {
+        position: sticky; top: 0; z-index: 10; height: 56px; display: flex; align-items: center;
+        gap: 12px; padding: 0 18px; background: rgba(255, 255, 255, 0.88);
+        backdrop-filter: blur(14px); border-bottom: 1px solid var(--line);
+      }
+      .doc-title { font-size: 13.5px; font-weight: 600; }
+      .doc-meta { font-size: 11px; color: var(--text-3); margin-left: 10px; }
+      .tools { margin-left: auto; display: flex; align-items: center; gap: 6px; }
+      .seg { display: inline-flex; padding: 2px; border-radius: 9px; background: var(--hover); }
+      .seg button {
+        min-width: 30px; height: 26px; border: 0; border-radius: 7px; background: none;
+        color: var(--text-2); font: inherit; font-size: 11.5px; font-weight: 600; cursor: pointer;
+      }
+      .icon {
+        width: 32px; height: 32px; border: 0; border-radius: 8px; background: none;
+        color: var(--text-2); cursor: pointer; font-size: 14px;
+      }
+      .icon:hover { background: var(--hover); }
+      .icon.is-on { background: var(--accent-soft); color: var(--accent); }
+
+      /* 标签页 */
+      .tabbar { display: flex; gap: 2px; padding: 0 8px; border-bottom: 1px solid var(--line); background: var(--panel); }
+      .doc-tab {
+        display: flex; align-items: center; gap: 7px; height: 34px; padding: 0 8px;
+        border-bottom: 2px solid transparent; color: var(--text-3); font-size: 12.5px; cursor: pointer;
+      }
+      .doc-tab.is-active { color: #4f46e5; border-bottom-color: #4f46e5; font-weight: 600; }
+      .doc-tab i { width: 5px; height: 5px; border-radius: 50%; background: var(--line-2); }
+      .doc-tab.is-active i { background: #4f46e5; }
+
+      /* 工作区：阅读 / 双栏 */
+      .workspace { display: grid; grid-template-columns: minmax(0, 1fr); flex: 1; min-height: 0; }
+      .workspace.is-split { grid-template-columns: minmax(0, 1fr) minmax(0, 1fr); }
+      .editor { display: none; flex-direction: column; border-right: 1px solid var(--line); background: var(--panel-2); }
+      .workspace.is-split .editor { display: flex; }
+      .editor-head {
+        height: 34px; display: flex; align-items: center; gap: 8px; padding: 0 14px;
+        border-bottom: 1px solid var(--line); font-size: 11px; color: var(--text-3);
+      }
+      .editor-head b { color: var(--text-2); letter-spacing: .04em; }
+      .editor-code {
+        margin: 0; padding: 20px; overflow: auto; flex: 1;
+        font-family: var(--mono); font-size: 13px; line-height: 22px; white-space: pre-wrap;
+        color: var(--text);
+      }
+      .content { overflow: auto; min-height: 0; }
+
+      .doc { max-width: 828px; margin: 0 auto; padding: 44px 54px 140px; width: 100%; }
+      .doc h1 { font-size: 1.92em; margin: 0 0 0.6em; padding-bottom: 0.34em; border-bottom: 1px solid var(--line); }
+      .doc h2 { font-size: 1.4em; margin: 1.9em 0 0.62em; padding-bottom: 0.3em; border-bottom: 1px solid var(--line); }
+      .doc p { margin: 0 0 1.05em; line-height: 1.78; color: var(--text); }
+      .doc .lead { color: var(--text-2); }
+      .doc blockquote {
+        margin: 0 0 1.2em; padding: 12px 18px; border-left: 3px solid #b9b4ff;
+        border-radius: 0 8px 8px 0; background: var(--panel-2); color: var(--text-2); line-height: 1.78;
+      }
+      .doc table { width: 100%; border-collapse: collapse; font-size: 0.92em; margin-bottom: 1.4em; }
+      .doc th, .doc td { border: 1px solid var(--line); padding: 7px 13px; text-align: left; }
+      .doc th { background: var(--panel-2); }
+      .doc pre {
+        background: #101725; color: #dde5f2; border-radius: 12px; padding: 16px 18px;
+        font-family: var(--mono); font-size: 13px; line-height: 1.7; overflow: auto; position: relative;
+      }
+      .doc pre .copy {
+        position: absolute; top: 8px; right: 8px; border: 1px solid rgba(255,255,255,.14);
+        background: rgba(255,255,255,.06); color: #aab6c9; border-radius: 6px;
+        font-family: var(--font); font-size: 11px; padding: 3px 9px; cursor: pointer;
+      }
+      .k { color: #c678dd; } .s { color: #98c379; } .n { color: #d19a66; } .c { color: #7d8799; font-style: italic; }
+
+      /* 空状态 */
+      .empty { display: none; flex: 1; place-items: center; padding: 48px 24px 96px; }
+      .empty.is-on { display: grid; }
+      .doc.is-off { display: none; }
+      .empty-card {
+        max-width: 560px; padding: 40px 40px 28px; border-radius: 20px; border: 1px solid var(--line);
+        background: var(--panel); box-shadow: 0 1px 2px rgba(16,24,40,.05); text-align: center;
+      }
+      .empty-card h2 { margin: 16px 0 10px; font-size: 22px; }
+      .empty-card p { color: var(--text-2); line-height: 1.75; margin: 0 0 22px; }
+      .empty-actions { display: flex; gap: 10px; justify-content: center; }
+      .empty-links { margin: 16px 0 24px; font-size: 12.5px; color: var(--accent); }
+      .empty-links span { cursor: pointer; }
+      .facts { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; border-top: 1px solid var(--line); padding-top: 18px; text-align: left; }
+      .facts b { display: block; font-size: 10.5px; color: var(--text-3); letter-spacing: .05em; margin-bottom: 3px; }
+      .facts span { font-size: 11.5px; color: var(--text-2); line-height: 1.5; }
+
+      .switch {
+        position: fixed; right: 18px; bottom: 18px; z-index: 20;
+        background: #1d2430; color: #eef1f6; border: 0; border-radius: 10px;
+        padding: 9px 14px; font: inherit; font-size: 12px; cursor: pointer;
+        box-shadow: var(--shadow);
+      }
+      @media (max-width: 880px) {
+        .sidebar { display: none; }
+        .doc { padding: 28px 20px 100px; }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="app">
+      <aside class="sidebar">
+        <div class="brand">
+          <div class="brand-mark">M</div>
+          <div class="brand-text">
+            <strong>Markdown 预览器</strong>
+            <span>docs</span>
+          </div>
+        </div>
+
+        <div class="tabs">
+          <button class="tab is-active" id="tab-files" type="button">文件 <span class="count">4</span></button>
+          <button class="tab" id="tab-outline" type="button">大纲 <span class="count">4</span></button>
+        </div>
+
+        <div class="side-actions">
+          <button class="btn" type="button">▤ 打开文件</button>
+          <button class="btn" type="button">▸ 打开文件夹</button>
+        </div>
+
+        <div class="search">⌕ 搜索文件名</div>
+
+        <div class="tree" id="tree">
+          <div class="tree-title">根目录</div>
+          <button class="file is-active" type="button">▤ README.md <span class="size">4.2 KB</span></button>
+          <div class="tree-title">guide</div>
+          <button class="file" type="button">▤ install.md <span class="size">1.1 KB</span></button>
+          <button class="file" type="button">▤ api.md <span class="size">6.8 KB</span></button>
+          <button class="file" type="button">▤ changelog.md <span class="size">2.4 KB</span></button>
+        </div>
+
+        <nav class="outline" id="outline">
+          <button class="ol-item is-active" type="button">快速开始</button>
+          <button class="ol-item lv2" type="button">安装</button>
+          <button class="ol-item lv2" type="button">打开文档</button>
+          <button class="ol-item" type="button">支持的语法</button>
+          <button class="ol-item lv2" type="button">表格与任务列表</button>
+          <button class="ol-item" type="button">常见问题</button>
+        </nav>
+
+        <div class="side-foot">
+          <button type="button">粘贴文本</button><i class="sep"></i><button type="button">示例文档</button>
+        </div>
+      </aside>
+
+      <main class="main">
+        <header class="toolbar">
+          <span class="doc-title">README.md</span>
+          <span class="doc-meta">docs/README.md · 4.2 KB · 789 字</span>
+          <div class="tools">
+            <button class="icon" id="split-toggle" type="button" title="双栏编辑">◫</button>
+            <span class="seg"><button type="button">A−</button><button type="button">A+</button></span>
+            <button class="icon" type="button" title="切换宽度">◧</button>
+            <button class="icon" type="button" title="切换主题">☾</button>
+          </div>
+        </header>
+
+        <div class="tabbar">
+          <div class="doc-tab is-active"><i></i>README.md</div>
+          <div class="doc-tab"><i></i>guide.md</div>
+          <div class="doc-tab"><i></i>api.md</div>
+        </div>
+
+        <div class="workspace" id="workspace">
+          <section class="editor">
+            <header class="editor-head"><b>源码</b><span style="margin-left:auto">Ctrl / ⌘ + S 保存</span></header>
+            <pre class="editor-code"># Markdown 预览器
+
+把 `.md` 文件或整个文档目录拖进来，立刻看到渲染结果。
+
+## 快速开始
+
+```bash
+pnpm install
+pnpm dev
+```
+
+## 支持的语法
+
+| 能力 | 状态 |
+| --- | --- |
+| CommonMark | 已支持 |
+| Mermaid | 已支持 |</pre>
+          </section>
+
+          <div class="content">
+            <article class="doc" id="doc">
+          <h1>Markdown 预览器</h1>
+          <p class="lead">
+            把 <code>.md</code> 文件或整个文档目录拖进来，立刻看到渲染结果。不上传、不落盘，全部在本地完成。
+          </p>
+          <blockquote>
+            渲染遵循 CommonMark 规范，并启用 GFM 扩展；原始 HTML 会在渲染后经过白名单净化，脚本类内容不会执行。
+          </blockquote>
+
+          <h2>快速开始</h2>
+          <pre><span class="c"># 三条命令跑起来</span>
+<span class="k">pnpm</span> install
+<span class="k">pnpm</span> dev        <span class="c"># http://localhost:5180</span>
+<span class="k">pnpm</span> build      <span class="c"># 产出 dist/</span><button class="copy" type="button">复制</button></pre>
+
+          <h2>支持的语法</h2>
+          <table>
+            <thead>
+              <tr><th>能力</th><th>状态</th><th>说明</th></tr>
+            </thead>
+            <tbody>
+              <tr><td>CommonMark 解析</td><td>已支持</td><td>官方规范用例全覆盖</td></tr>
+              <tr><td>GFM 表格与任务列表</td><td>已支持</td><td>表头对齐生效</td></tr>
+              <tr><td>代码高亮</td><td>已支持</td><td>常用语言内置</td></tr>
+              <tr><td>Mermaid 图表</td><td>已支持</td><td>命中时才加载</td></tr>
+            </tbody>
+          </table>
+
+          <p>这是一份静态原型：布局、信息层级与交互状态与实现一致，但不包含真实的解析逻辑。</p>
+            </article>
+
+            <section class="empty" id="empty">
+              <div class="empty-card">
+                <div style="display:flex;justify-content:center">
+                  <div class="brand-mark" style="width:40px;height:40px;border-radius:11px;font-size:19px">M</div>
+                </div>
+                <h2>Markdown 预览器</h2>
+                <p>把 <code>.md</code> 文件或整个文档目录拖进来，立刻看到渲染结果。</p>
+                <div class="empty-actions">
+                  <button class="btn btn-primary" type="button">▤ 打开文件</button>
+                  <button class="btn" type="button">▸ 打开文件夹</button>
+                </div>
+                <div class="empty-links"><span>先看一份示例文档</span><i class="sep"></i><span>粘贴 Markdown 文本</span></div>
+                <div class="facts">
+                  <div><b>解析</b><span>CommonMark 0.31 + GFM</span></div>
+                  <div><b>安全</b><span>渲染后白名单净化</span></div>
+                  <div><b>启动</b><span>静态页面，无后端</span></div>
+                </div>
+              </div>
+            </section>
+          </div>
+        </div>
+      </main>
+    </div>
+
+    <button class="switch" id="switch" type="button">切换到空状态</button>
+
+    <script>
+      const tree = document.getElementById('tree')
+      const outline = document.getElementById('outline')
+      const tabFiles = document.getElementById('tab-files')
+      const tabOutline = document.getElementById('tab-outline')
+      const doc = document.getElementById('doc')
+      const empty = document.getElementById('empty')
+      const switcher = document.getElementById('switch')
+      let isEmpty = false
+
+      tabFiles.addEventListener('click', () => {
+        tabFiles.classList.add('is-active')
+        tabOutline.classList.remove('is-active')
+        tree.classList.remove('is-off')
+        outline.classList.remove('is-on')
+      })
+
+      tabOutline.addEventListener('click', () => {
+        tabOutline.classList.add('is-active')
+        tabFiles.classList.remove('is-active')
+        tree.classList.add('is-off')
+        outline.classList.add('is-on')
+      })
+
+      switcher.addEventListener('click', () => {
+        isEmpty = !isEmpty
+        doc.classList.toggle('is-off', isEmpty)
+        empty.classList.toggle('is-on', isEmpty)
+        switcher.textContent = isEmpty ? '切换回阅读状态' : '切换到空状态'
+      })
+
+      document.querySelectorAll('#tree .file').forEach((el) => {
+        el.addEventListener('click', () => {
+          document.querySelectorAll('#tree .file').forEach((n) => n.classList.remove('is-active'))
+          el.classList.add('is-active')
+        })
+      })
+
+      document.querySelectorAll('#outline .ol-item').forEach((el) => {
+        el.addEventListener('click', () => {
+          document.querySelectorAll('#outline .ol-item').forEach((n) => n.classList.remove('is-active'))
+          el.classList.add('is-active')
+        })
+      })
+
+      const splitToggle = document.getElementById('split-toggle')
+      const workspace = document.getElementById('workspace')
+      splitToggle.addEventListener('click', () => {
+        workspace.classList.toggle('is-split')
+        splitToggle.classList.toggle('is-on', workspace.classList.contains('is-split'))
+      })
+    </script>
+  </body>
+</html>
