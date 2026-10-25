@@ -1,6 +1,6 @@
 /**
  * 会话持久化：把「上次打开了哪些文档」写进 IndexedDB。
- * 只有拿到文件句柄的来源才值得存——拖拽/粘贴拿到的只是一次性快照。
+ * 句柄/路径来源存引用，刷新后重读；拖拽/粘贴快照存内容本身（有大小上限）。
  */
 
 const DB_NAME = 'md-preview'
@@ -13,11 +13,13 @@ export interface StoredTab {
   path: string
   name: string
   rootName: string
-  kind: 'dir' | 'file' | 'demo' | 'path'
+  kind: 'dir' | 'file' | 'demo' | 'path' | 'snapshot'
   handle?: unknown
   /** 桌面版按绝对路径恢复，不需要授权 */
   target?: string
   isDir?: boolean
+  /** 快照来源：把内容一起存下，恢复成只读标签 */
+  text?: string
   scrollTop: number
 }
 
@@ -88,3 +90,7 @@ export async function ensureReadPermission(handle: unknown): Promise<boolean> {
     return false
   }
 }
+
+/** 快照入会话的上限：单文件 2 MB，总会话 12 MB */
+export const SNAPSHOT_MAX_FILE_BYTES = 2 * 1024 * 1024
+export const SNAPSHOT_MAX_TOTAL_BYTES = 12 * 1024 * 1024

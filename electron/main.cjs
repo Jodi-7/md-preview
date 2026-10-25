@@ -222,6 +222,38 @@ ipcMain.handle('fs:exists', async (_event, filePath) => {
   }
 })
 
+// 全文搜索：对扫描清单逐文件匹配，纯本地、不建索引。
+// 上限与渲染进程的 search.ts 一致，极端目录也不会拖住主进程太久。
+const SEARCH_MAX_HITS = 200
+const SEARCH_MAX_FILE_BYTES = 8 * 1024 * 1024
+
+ipcMain.handle('fs:search', async (_event, root, query) => {
+  const keyword = String(query ?? '').trim().toLowerCase()
+  if (!keyword) return []
+
+  const { files } = await scanDirectory(root)
+  const hits = []
+  for (const file of files) {
+    if (hits.length >= SEARCH_MAX_HITS) break
+    if (file.size > SEARCH_MAX_FILE_BYTES) continue
+    let text
+    try {
+      text = await fs.readFile(path.join(root, file.rel), 'utf8')
+    } catch {
+      continue
+    }
+    const lines = text.split(/\r?\n/)
+    let perFile = 0
+    for (let index = 0; index < lines.length && perFile < 8 && hits.length < SEARCH_MAX_HITS; index += 1) {
+      const raw = lines[index]
+      if (!raw.toLowerCase().includes(keyword)) continue
+      perFile += 1
+      hits.push({ path: file.rel, name: path.basename(file.rel), line: index + 1, snippet: raw.trim().slice(0, 160) })
+    }
+  }
+  return hits
+})
+
 ipcMain.on('shell:reveal', (_event, filePath) => {
   shell.showItemInFolder(filePath)
 })

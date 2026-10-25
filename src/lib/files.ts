@@ -1,5 +1,6 @@
 import type { DocEntry, DocStat, Library, LibraryKind } from '../types'
 import { DEMO_MARKDOWN } from './demo'
+import { searchDocs } from './search'
 
 const MARKDOWN_RE = /\.(md|markdown|mdown|mkd)$/i
 const IMAGE_RE = /\.(png|jpe?g|gif|webp|avif|svg|bmp|ico)$/i
@@ -115,10 +116,19 @@ export function libraryFromFiles(files: File[], kind: LibraryKind): Library {
     rootName: kind === 'single' ? baseOf(files[0]?.name ?? '未命名') : root || '已打开的目录',
     docs,
     watchable: false,
+    // 拖拽/普通选择器拿到的是一次性快照；带 origin 后内容会存进会话，刷新可恢复
+    origin: { kind: 'snapshot' },
     async readDoc(path) {
       const file = fileMap.get(path)
       if (!file) throw new Error(`找不到文件：${path}`)
       return file.text()
+    },
+    search(query) {
+      return searchDocs(docs, query, (path) => {
+        const file = fileMap.get(path)
+        if (!file) throw new Error(`找不到文件：${path}`)
+        return file.text()
+      })
     },
     async resolveAsset(docPath, src) {
       if (!src || /^(https?:|data:|blob:|mailto:|\/\/|#)/i.test(src)) return null
@@ -149,14 +159,67 @@ export function libraryFromText(name: string, text: string): Library {
     rootName: path,
     docs: [{ path, name: path, dir: '', size: text.length, mtime: Date.now() }],
     watchable: false,
+    origin: { kind: 'snapshot' },
     async readDoc() {
       return text
+    },
+    search(query) {
+      return searchDocs(
+        [{ path, name: path, dir: '', size: text.length, mtime: Date.now() }],
+        query,
+        async () => text,
+      )
     },
     async resolveAsset() {
       return null
     },
     dispose() {
       /* 文本来源没有需要释放的资源 */
+    },
+  }
+}
+
+/**
+ * 用内存文本重建一个快照库（会话恢复用）。
+ * 快照没有目录上下文，相对图片解析不了，与单文件模式的降级一致。
+ */
+export function libraryFromSnapshot(
+  entries: { path: string; name: string; text: string }[],
+  rootName: string,
+): Library {
+  const contents = new Map(entries.map((entry) => [entry.path, entry.text]))
+  const docs: DocEntry[] = entries.map((entry) => ({
+    path: entry.path,
+    name: entry.name,
+    dir: dirOf(entry.path),
+    size: entry.text.length,
+    mtime: Date.now(),
+  }))
+  docs.sort(compareDocs)
+
+  return {
+    kind: entries.length > 1 ? 'directory' : 'single',
+    rootName,
+    docs,
+    watchable: false,
+    origin: { kind: 'snapshot' },
+    async readDoc(path) {
+      const text = contents.get(path)
+      if (text === undefined) throw new Error(`找不到文件：${path}`)
+      return text
+    },
+    search(query) {
+      return searchDocs(docs, query, async (path) => {
+        const text = contents.get(path)
+        if (text === undefined) throw new Error(`找不到文件：${path}`)
+        return text
+      })
+    },
+    async resolveAsset() {
+      return null
+    },
+    dispose() {
+      contents.clear()
     },
   }
 }
@@ -281,6 +344,13 @@ function handleLibrary(root: FsDirHandle, kind: LibraryKind): Promise<Library> {
         await writable.write(text)
         await writable.close()
       },
+      search(query) {
+        return searchDocs(docs, query, (path) => {
+          const handle = files.get(path)
+          if (!handle) throw new Error(`找不到文件：${path}`)
+          return handle.getFile().then((file) => file.text())
+        })
+      },
       async resolveAsset(docPath, src) {
         if (!src || /^(https?:|data:|blob:|mailto:|\/\/|#)/i.test(src)) return null
         const target = resolveRelative(docPath, src)
@@ -353,6 +423,9 @@ export async function libraryFromFileHandle(handle: FsFileHandle): Promise<Libra
       await writable.write(text)
       await writable.close()
     },
+    search(query) {
+      return searchDocs([entry], query, async () => (await handle.getFile()).text())
+    },
     async resolveAsset() {
       return null
     },
@@ -375,6 +448,13 @@ function demoLibrary(): Library {
     origin: { kind: 'demo' },
     async readDoc() {
       return DEMO_MARKDOWN
+    },
+    search(query) {
+      return searchDocs(
+        [{ path: 'Demo.md', name: 'Demo.md', dir: '', size: DEMO_MARKDOWN.length, mtime: Date.now() }],
+        query,
+        async () => DEMO_MARKDOWN,
+      )
     },
     async resolveAsset() {
       return null

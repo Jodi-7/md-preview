@@ -1,4 +1,4 @@
-import type { DocEntry, Library } from '../types'
+import type { DocEntry, Library, SearchHit } from '../types'
 
 export interface DesktopScan {
   rootName: string
@@ -17,6 +17,9 @@ export interface DesktopBridge {
   exists(filePath: string): Promise<boolean>
   toUrl(filePath: string): string
   reveal(filePath: string): void
+  search(root: string, query: string): Promise<SearchHit[]>
+  /** Electron 新版已弃用 File.path，统一走 webUtils 取拖入文件的真实路径 */
+  pathForFile(file: File): string
   initialFiles(): Promise<string[]>
   onOpenFiles(callback: (files: string[]) => void): () => void
   onOpenFolder(callback: (folder: string) => void): () => void
@@ -61,9 +64,11 @@ function compareDocs(a: DocEntry, b: DocEntry): number {
 }
 
 /** 把相对路径解析成绝对路径；越出根目录则返回 null */
-function resolveInside(root: string, docPath: string, src: string): string | null {
-  const decoded = decodeURIComponent(src.split(/[?#]/)[0])
+export function resolveInside(root: string, docPath: string, src: string): string | null {
+  const decoded = decodeURIComponent(src.split(/[?#]/)[0]).replace(/\\/g, '/')
   if (decoded.startsWith('/') || /^[a-zA-Z]:/.test(decoded)) return null
+  // 带协议的地址（https:、mailto: 等）不是文件系统路径；调用方大多已过滤，这里兜底
+  if (/^[a-z][a-z0-9+.-]*:/i.test(decoded)) return null
   const base = docPath.includes('/') ? docPath.slice(0, docPath.lastIndexOf('/')) : ''
   const segments = `${base}/${decoded}`.split('/')
   const stack: string[] = []
@@ -101,6 +106,7 @@ export async function libraryFromDesktop(mode: 'file' | 'dir', target: string): 
       origin: { kind: 'path', root: target, isDir: false },
       readDoc: () => api.read(target),
       stat: () => api.stat(target),
+      search: (query) => api.search(dirName(target), query),
       writeDoc: async (_path, text) => {
         await api.write(target, text)
       },
@@ -135,6 +141,7 @@ export async function libraryFromDesktop(mode: 'file' | 'dir', target: string): 
     origin: { kind: 'path', root: target, isDir: true },
     readDoc: (path) => api.read(joinPath(target, path)),
     stat: (path) => api.stat(joinPath(target, path)),
+    search: (query) => api.search(target, query),
     writeDoc: async (path, text) => {
       await api.write(joinPath(target, path), text)
     },

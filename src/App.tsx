@@ -5,6 +5,7 @@ import type {
   Library,
   LibraryKind,
   OutlineItem,
+  SearchHit,
   Tab,
   Theme,
   ViewMode,
@@ -14,6 +15,7 @@ import {
   libraryFromDirectoryHandle,
   libraryFromFileHandle,
   libraryFromFiles,
+  libraryFromSnapshot,
   libraryFromText,
   type FsDirHandle,
   type FsFileHandle,
@@ -24,11 +26,14 @@ import {
   ensureReadPermission,
   loadSession,
   saveSession,
+  SNAPSHOT_MAX_FILE_BYTES,
+  SNAPSHOT_MAX_TOTAL_BYTES,
   type StoredTab,
 } from './lib/session'
 import { desktopBridge, libraryFromDesktop } from './lib/desktop'
+import { scrollPreviewToLine } from './lib/scrollSync'
 import { useScrollSync } from './lib/useScrollSync'
-import { FileTree } from './components/FileTree'
+import { FileTree, type SearchMode } from './components/FileTree'
 import { Outline } from './components/Outline'
 import { Toolbar } from './components/Toolbar'
 import { TabBar } from './components/TabBar'
@@ -68,6 +73,9 @@ export default function App() {
   const [activeHeading, setActiveHeading] = useState('')
   const [tab, setTab] = useState<SidebarTab>('files')
   const [query, setQuery] = useState('')
+  const [searchMode, setSearchMode] = useState<SearchMode>('name')
+  const [searchResults, setSearchResults] = useState<SearchHit[] | null>(null)
+  const [searching, setSearching] = useState(false)
   const [dragging, setDragging] = useState(false)
   const [sidebarOpen, setSidebarOpen] = useState(false)
   const [pasteOpen, setPasteOpen] = useState(false)
@@ -85,6 +93,8 @@ export default function App() {
   const scrollMap = useRef(new Map<string, number>())
   const watchBusy = useRef(false)
   const pendingFocus = useRef<string | null>(null)
+  const pendingJump = useRef<{ id: string; line: number } | null>(null)
+  const searchSeq = useRef(0)
   const editTimer = useRef<number | undefined>(undefined)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const folderInputRef = useRef<HTMLInputElement>(null)
@@ -191,10 +201,24 @@ export default function App() {
 
   const handleDropped = useCallback(
     async (dataTransfer: DataTransfer) => {
-      // 桌面版：拖进来的东西带真实路径，直接按路径打开，能拿到监听与保存能力
+      // 桌面版：拖进来的东西带真实路径，直接按路径打开，能拿到监听与保存能力。
+      // Electron 新版弃用了 File.path，优先走 webUtils（preload 的 pathForFile）
       if (desktopBridge) {
-        const dropped = Array.from(dataTransfer.files ?? []) as (File & { path?: string })[]
-        const target = dropped.find((file) => file.path)?.path
+        const dropped = Array.from(dataTransfer.files ?? [])
+        let target: string | null = null
+        for (const file of dropped) {
+          let resolved: string | null = null
+          try {
+            resolved = desktopBridge.pathForFile(file) || null
+          } catch {
+            resolved = null
+          }
+          if (!resolved) resolved = (file as File & { path?: string }).path ?? null
+          if (resolved) {
+            target = resolved
+            break
+          }
+        }
         if (target) {
           const looksMarkdown = /\.(md|markdown|mdown|mkd)$/i.test(target)
           try {
@@ -347,9 +371,14 @@ export default function App() {
               ? libraryFromFiles([], 'demo')
               : head.kind === 'path'
                 ? await libraryFromDesktop(head.isDir ? 'dir' : 'file', head.target ?? '')
-                : head.kind === 'dir'
-                  ? await libraryFromDirectoryHandle(head.handle as FsDirHandle)
-                  : await libraryFromFileHandle(head.handle as FsFileHandle)
+                : head.kind === 'snapshot'
+                  ? libraryFromSnapshot(
+                      list.map((item) => ({ path: item.path, name: item.name, text: item.text ?? '' })),
+                      head.rootName,
+                    )
+                  : head.kind === 'dir'
+                    ? await libraryFromDirectoryHandle(head.handle as FsDirHandle)
+                    : await libraryFromFileHandle(head.handle as FsFileHandle)
 
           librariesRef.current.push(lib)
           setLibrary(lib)
@@ -369,6 +398,11 @@ export default function App() {
 
       if (preferredId && openedIds.includes(preferredId)) setActiveId(preferredId)
       if (failed.length > 0) setRestoreCandidates(failed)
+
+      const snapshotCount = items.filter(
+        (item) => item.kind === 'snapshot' && openedIds.includes(`${item.rootName}::${item.path}`),
+      ).length
+      if (snapshotCount > 0) setToast(`已恢复 ${snapshotCount} 篇快照文档（不支持自动刷新与保存）`)
     },
     [openTab],
   )
@@ -380,7 +414,8 @@ export default function App() {
     const granted: StoredTab[] = []
     const denied: StoredTab[] = []
     for (const item of items) {
-      if (item.kind === 'demo') {
+      if (item.kind === 'demo' || item.kind === 'snapshot') {
+        // 示例与快照不需要授权，直接恢复
         granted.push(item)
         continue
       }
@@ -419,19 +454,30 @@ export default function App() {
 
   // 标签或当前文档变化后，把会话写回 IndexedDB
   const persistSession = useCallback(() => {
-    const records: StoredTab[] = tabs
-      .filter((item) => item.source)
-      .map((item) => ({
+    const records: StoredTab[] = []
+    let snapshotBytes = 0
+    for (const item of tabs) {
+      if (!item.source) continue
+      const record: StoredTab = {
         id: item.id,
         path: item.path,
         name: item.name,
         rootName: item.rootName,
-        kind: item.source!.kind,
-        handle: item.source!.handle,
-        target: item.source!.root,
-        isDir: item.source!.isDir,
+        kind: item.source.kind,
+        handle: item.source.handle,
+        target: item.source.root,
+        isDir: item.source.isDir,
         scrollTop: scrollMap.current.get(item.id) ?? 0,
-      }))
+      }
+      // 快照来源把内容一起存下，刷新后恢复成只读标签；超限的不存，避免拖垮 IndexedDB
+      if (item.source.kind === 'snapshot' && item.text.length <= SNAPSHOT_MAX_FILE_BYTES) {
+        if (snapshotBytes + item.text.length <= SNAPSHOT_MAX_TOTAL_BYTES) {
+          record.text = item.text
+          snapshotBytes += item.text.length
+        }
+      }
+      records.push(record)
+    }
     void saveSession({ version: 1, updatedAt: Date.now(), activeId, tabs: records })
   }, [tabs, activeId])
 
@@ -452,6 +498,85 @@ export default function App() {
       document.removeEventListener('visibilitychange', onHide)
     }
   }, [persistSession])
+
+  /* ---------------- 全文搜索 ---------------- */
+
+  // 内容模式：关键词 ≥2 字符、防抖 250ms；序号保证只有最新一次请求的结果落地
+  useEffect(() => {
+    const search = library?.search
+    if (searchMode !== 'content' || !search) {
+      setSearchResults(null)
+      setSearching(false)
+      return
+    }
+    const keyword = query.trim()
+    if (keyword.length < 2) {
+      setSearchResults(null)
+      setSearching(false)
+      return
+    }
+
+    const seq = ++searchSeq.current
+    setSearching(true)
+    const timer = window.setTimeout(() => {
+      void search(keyword).then(
+        (hits) => {
+          if (searchSeq.current !== seq) return
+          setSearchResults(hits)
+          setSearching(false)
+        },
+        () => {
+          if (searchSeq.current !== seq) return
+          setSearchResults([])
+          setSearching(false)
+        },
+      )
+    }, 250)
+    return () => window.clearTimeout(timer)
+  }, [library, query, searchMode])
+
+  // 点击命中项：打开（或切换到）目标文档，再把预览滚到命中行
+  const handleJumpToHit = useCallback(
+    (hit: SearchHit) => {
+      if (!library) return
+      const id = `${library.rootName}::${hit.path}`
+      // data-line 是 0 起的源码行号，命中行号从 1 起
+      const scrollWhenReady = () => {
+        requestAnimationFrame(() =>
+          requestAnimationFrame(() => {
+            if (!tabsRef.current.some((item) => item.id === id)) return
+            if (activeIdRef.current !== id) setActiveId(id)
+            if (contentRef.current) {
+              scrollPreviewToLine(contentRef.current, hit.line - 1)
+              scrollMap.current.set(id, contentRef.current.scrollTop)
+            }
+          }),
+        )
+      }
+
+      if (tabsRef.current.some((item) => item.id === id)) {
+        scrollWhenReady()
+        return
+      }
+      pendingJump.current = { id, line: hit.line - 1 }
+      void openTab(library, hit.path, hit.name)
+    },
+    [library, openTab],
+  )
+
+  // 新开的标签就位后，执行「跳到命中行」
+  useEffect(() => {
+    const jump = pendingJump.current
+    if (!jump || !tabs.some((item) => item.id === jump.id)) return
+    pendingJump.current = null
+    requestAnimationFrame(() =>
+      requestAnimationFrame(() => {
+        if (!contentRef.current) return
+        scrollPreviewToLine(contentRef.current, jump.line)
+        scrollMap.current.set(jump.id, contentRef.current.scrollTop)
+      }),
+    )
+  }, [tabs])
 
   /* ---------------- 编辑与保存 ---------------- */
 
@@ -783,6 +908,11 @@ export default function App() {
               openPaths={openPaths}
               query={query}
               onQueryChange={setQuery}
+              searchMode={searchMode}
+              onSearchModeChange={setSearchMode}
+              searchResults={searchResults}
+              searching={searching}
+              onJumpToHit={handleJumpToHit}
               onSelect={(path) => {
                 if (!library) return
                 const doc = library.docs.find((item) => item.path === path)

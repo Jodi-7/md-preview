@@ -1,5 +1,8 @@
-import type { Library } from '../types'
+import { useId } from 'react'
+import type { Library, SearchHit } from '../types'
 import { Icon } from './Icon'
+
+export type SearchMode = 'name' | 'content'
 
 interface Props {
   library: Library | null
@@ -8,6 +11,12 @@ interface Props {
   openPaths?: Set<string>
   query: string
   onQueryChange(value: string): void
+  searchMode: SearchMode
+  onSearchModeChange(mode: SearchMode): void
+  /** 内容模式下的搜索结果；null 表示还没搜过 */
+  searchResults: SearchHit[] | null
+  searching: boolean
+  onJumpToHit(hit: SearchHit): void
   onSelect(path: string): void
   onOpenFiles(): void
   onOpenFolder(): void
@@ -42,6 +51,11 @@ export function FileTree({
   openPaths,
   query,
   onQueryChange,
+  searchMode,
+  onSearchModeChange,
+  searchResults,
+  searching,
+  onJumpToHit,
   onSelect,
   onOpenFiles,
   onOpenFolder,
@@ -49,6 +63,10 @@ export function FileTree({
   const keyword = query.trim().toLowerCase()
   const groups = groupDocs(library, keyword)
   const total = library?.docs.length ?? 0
+  const contentSupported = library?.search !== undefined
+  const listId = useId()
+
+  const showContent = searchMode === 'content' && contentSupported
 
   return (
     <div className="tree">
@@ -68,40 +86,99 @@ export function FileTree({
         <input
           type="search"
           value={query}
-          placeholder="搜索文件名"
+          placeholder={showContent ? '搜索文档内容' : '搜索文件名'}
           onChange={(event) => onQueryChange(event.target.value)}
-          aria-label="搜索文件名"
+          aria-label={showContent ? '搜索文档内容' : '搜索文件名'}
         />
       </label>
 
-      <div className="tree-scroll">
+      {contentSupported && (
+        <div className="search-mode" role="tablist" aria-label="搜索模式">
+          <button
+            type="button"
+            role="tab"
+            aria-selected={searchMode === 'name'}
+            className={`mode-btn${searchMode === 'name' ? ' is-active' : ''}`}
+            onClick={() => onSearchModeChange('name')}
+          >
+            文件名
+          </button>
+          <button
+            type="button"
+            role="tab"
+            aria-selected={searchMode === 'content'}
+            className={`mode-btn${searchMode === 'content' ? ' is-active' : ''}`}
+            onClick={() => onSearchModeChange('content')}
+          >
+            内容
+          </button>
+        </div>
+      )}
+
+      <div className="tree-scroll" id={listId}>
         {total === 0 && (
           <p className="tree-hint">
             还没有打开文档。拖一个 <code>.md</code> 文件进来，或者直接选整个文档目录。
           </p>
         )}
 
-        {total > 0 && groups.length === 0 && <p className="tree-hint">没有匹配「{query}」的文件。</p>}
+        {showContent && keyword.length >= 2 && searching && (
+          <p className="tree-hint">正在搜索「{query}」…</p>
+        )}
 
-        {groups.map((group) => (
-          <section key={group.dir || '__root'} className="tree-group">
-            <h3 className="tree-group-title">{group.dir || '根目录'}</h3>
-            {group.docs.map((doc) => (
+        {showContent && keyword.length < 2 && (
+          <p className="tree-hint">输入至少 2 个字符，在当前目录的所有文档里查找内容。</p>
+        )}
+
+        {showContent && keyword.length >= 2 && !searching && searchResults?.length === 0 && (
+          <p className="tree-hint">没有文档包含「{query}」。</p>
+        )}
+
+        {showContent && searchResults && searchResults.length > 0 && (
+          <div className="search-hits">
+            {searchResults.map((hit, index) => (
               <button
-                key={doc.path}
+                key={`${hit.path}:${hit.line}:${index}`}
                 type="button"
-                className={`tree-item${doc.path === activePath ? ' is-active' : ''}`}
-                onClick={() => onSelect(doc.path)}
-                title={doc.path}
+                className="search-hit"
+                onClick={() => onJumpToHit(hit)}
+                title={`跳到 ${hit.path} 第 ${hit.line} 行`}
               >
-                <Icon name="doc" className="tree-item-icon" />
-                <span className="tree-item-name">{doc.name}</span>
-                {openPaths?.has(doc.path) && <span className="tree-item-open" title="已打开" />}
-                <span className="tree-item-size">{formatSize(doc.size)}</span>
+                <span className="search-hit-head">
+                  <Icon name="doc" className="tree-item-icon" />
+                  <span className="search-hit-name">{hit.name}</span>
+                  <span className="search-hit-line">L{hit.line}</span>
+                </span>
+                <span className="search-hit-snippet">{hit.snippet}</span>
               </button>
             ))}
-          </section>
-        ))}
+          </div>
+        )}
+
+        {!showContent && total > 0 && groups.length === 0 && (
+          <p className="tree-hint">没有匹配「{query}」的文件。</p>
+        )}
+
+        {!showContent &&
+          groups.map((group) => (
+            <section key={group.dir || '__root'} className="tree-group">
+              <h3 className="tree-group-title">{group.dir || '根目录'}</h3>
+              {group.docs.map((doc) => (
+                <button
+                  key={doc.path}
+                  type="button"
+                  className={`tree-item${doc.path === activePath ? ' is-active' : ''}`}
+                  onClick={() => onSelect(doc.path)}
+                  title={doc.path}
+                >
+                  <Icon name="doc" className="tree-item-icon" />
+                  <span className="tree-item-name">{doc.name}</span>
+                  {openPaths?.has(doc.path) && <span className="tree-item-open" title="已打开" />}
+                  <span className="tree-item-size">{formatSize(doc.size)}</span>
+                </button>
+              ))}
+            </section>
+          ))}
       </div>
     </div>
   )

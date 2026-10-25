@@ -24,11 +24,19 @@ export interface DocStat {
 
 /** 来源标记：只有带 origin 的库才能在刷新后恢复 */
 export interface LibraryOrigin {
-  kind: 'dir' | 'file' | 'demo' | 'path'
+  kind: 'dir' | 'file' | 'demo' | 'path' | 'snapshot'
   handle?: unknown
   /** 桌面版：绝对路径 */
   root?: string
   isDir?: boolean
+}
+
+/** 全文搜索的一条命中：行号从 1 起，snippet 已裁剪成适合展示的片段 */
+export interface SearchHit {
+  path: string
+  name: string
+  line: number
+  snippet: string
 }
 
 /**
@@ -54,6 +62,11 @@ export interface Library {
   stat?(path: string): Promise<DocStat | null>
   /** 只有拿到句柄、且有写权限时才有 */
   writeDoc?(path: string, text: string): Promise<void>
+  /**
+   * 可选的目录内全文搜索。实现差异（IPC / 逐文件读）收在库内部，
+   * 没有实现的库由界面层隐藏入口。命中总数由实现方封顶。
+   */
+  search?(query: string): Promise<SearchHit[]>
   dispose(): void
 }
 

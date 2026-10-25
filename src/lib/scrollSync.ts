@@ -29,6 +29,42 @@ function mappedElements(preview: HTMLElement): HTMLElement[] {
   return Array.from(preview.querySelectorAll<HTMLElement>('[data-line]'))
 }
 
+/** 预览里所有映射块的（视口坐标 top, 源码行号），按 top 升序 */
+export function previewLineMarks(preview: HTMLElement): { top: number; line: number }[] {
+  const marks = mappedElements(preview)
+    .map((element) => ({ top: element.getBoundingClientRect().top, line: Number(element.dataset.line) }))
+    .filter((mark) => !Number.isNaN(mark.line))
+  marks.sort((a, b) => a.top - b.top)
+  return marks
+}
+
+/** 在相邻映射块之间按滚动比例线性插值出连续行号（可带小数） */
+export function interpolateLine(marks: { top: number; line: number }[], y: number): number {
+  if (marks.length === 0) return 0
+  if (y <= marks[0].top) return marks[0].line
+  const last = marks[marks.length - 1]
+  if (y >= last.top) return last.line
+  for (let index = 0; index < marks.length - 1; index += 1) {
+    const a = marks[index]
+    const b = marks[index + 1]
+    if (y >= a.top && y <= b.top) {
+      const span = b.top - a.top
+      if (span <= 0) return b.line
+      return a.line + (b.line - a.line) * ((y - a.top) / span)
+    }
+  }
+  return last.line
+}
+
+/** 把（可能带小数的）行号换算回编辑器偏移：落在两行之间时按比例取 */
+export function editorOffsetForLine(offsets: number[], line: number): number {
+  if (offsets.length === 0) return 0
+  const index = Math.floor(line)
+  if (index >= offsets.length - 1) return offsets[Math.min(index, offsets.length - 1)]
+  const fraction = line - index
+  return offsets[index] + (offsets[index + 1] - offsets[index]) * fraction
+}
+
 /** 把预览滚到指定源码行对应的位置 */
 export function scrollPreviewToLine(preview: HTMLElement, line: number): void {
   let target: HTMLElement | null = null
@@ -43,17 +79,4 @@ export function scrollPreviewToLine(preview: HTMLElement, line: number): void {
   const offset =
     target.getBoundingClientRect().top - preview.getBoundingClientRect().top + preview.scrollTop
   preview.scrollTop = Math.max(0, offset - TOP_GAP)
-}
-
-/** 预览区顶部当前停在哪一行源码 */
-export function previewLineAtTop(preview: HTMLElement): number {
-  const probe = preview.getBoundingClientRect().top + TOP_GAP * 2
-  for (const element of mappedElements(preview)) {
-    const rect = element.getBoundingClientRect()
-    if (rect.bottom > probe) {
-      const value = Number(element.dataset.line)
-      return Number.isNaN(value) ? 0 : value
-    }
-  }
-  return 0
 }

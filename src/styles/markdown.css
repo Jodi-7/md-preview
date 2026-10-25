@@ -27,8 +27,14 @@
   overflow-wrap: break-word;
 }
 
-.md-body > :first-child {
+.md-body > :first-child,
+.md-body > .md-chunk:first-child > :first-child {
   margin-top: 0;
+}
+
+/* 分块渲染的透明包裹层：不参与布局，直接子代样式对块内元素照常生效 */
+.md-chunk {
+  display: contents;
 }
 
 .md-body h1,

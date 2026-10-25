@@ -1,7 +1,8 @@
-import { useEffect, useRef, type CSSProperties } from 'react'
+import { useEffect, useMemo, useRef, useState, type CSSProperties } from 'react'
 import type { Library, OutlineItem } from '../types'
 import { loadMermaid } from '../lib/mermaid'
 import { loadKatex } from '../lib/katex'
+import { splitIntoChunks } from '../lib/chunks'
 
 interface Props {
   html: string
@@ -27,6 +28,41 @@ export function DocumentView({
   onActiveHeading,
 }: Props) {
   const articleRef = useRef<HTMLElement>(null)
+  const plan = useMemo(() => splitIntoChunks(html), [html])
+  // 大文档先挂首块出首屏，其余块逐帧补齐；小文档一次挂完，行为与过去一致
+  const [mounted, setMounted] = useState(() => (plan.chunked ? 1 : plan.chunks.length))
+
+  useEffect(() => {
+    setMounted(plan.chunked ? 1 : plan.chunks.length)
+  }, [plan])
+
+  // 自适应批量补块：两次调度间隔（≈上一块的提交耗时 + 帧等待）超过 120ms 说明
+  // 单帧太重，批量减半；低于 60ms 则加 1。文档越大重排越贵，批量会自动收敛。
+  const batchRef = useRef(2)
+  const lastTickRef = useRef(0)
+  useEffect(() => {
+    if (mounted >= plan.chunks.length) return
+    const now = performance.now()
+    if (lastTickRef.current > 0) {
+      const gap = now - lastTickRef.current
+      if (gap > 120) batchRef.current = Math.max(1, Math.floor(batchRef.current / 2))
+      else if (gap < 60) batchRef.current = Math.min(8, batchRef.current + 1)
+    }
+    lastTickRef.current = now
+
+    let cancelled = false
+    const frame = requestAnimationFrame(() => {
+      if (cancelled) return
+      setMounted(Math.min(mounted + batchRef.current, plan.chunks.length))
+    })
+    return () => {
+      cancelled = true
+      cancelAnimationFrame(frame)
+    }
+  }, [plan, mounted])
+
+  // 后置增强在「每挂一块」后都要跑一遍；内部各自有幂等保护
+  const enhanceKey = `${html}::${mounted}`
 
   // 代码块复制按钮
   useEffect(() => {
@@ -65,7 +101,7 @@ export function DocumentView({
     return () => {
       for (const off of listeners) off()
     }
-  }, [html])
+  }, [enhanceKey])
 
   // 相对路径图片：解析成 blob URL
   useEffect(() => {
@@ -87,7 +123,7 @@ export function DocumentView({
     return () => {
       cancelled = true
     }
-  }, [html, docPath, library])
+  }, [enhanceKey, docPath, library])
 
   // Mermaid：只有出现图表时才加载渲染器
   useEffect(() => {
@@ -122,7 +158,7 @@ export function DocumentView({
     return () => {
       cancelled = true
     }
-  }, [html, dark])
+  }, [enhanceKey, dark])
 
   // 公式：KaTeX 同样按需加载
   useEffect(() => {
@@ -136,6 +172,7 @@ export function DocumentView({
       const katex = await loadKatex()
       if (cancelled) return
       for (const node of nodes) {
+        if (node.dataset.katexDone === '1') continue
         const tex = decodeURIComponent(node.dataset.tex ?? '')
         try {
           katex.render(tex, node, {
@@ -143,6 +180,7 @@ export function DocumentView({
             throwOnError: false,
             output: 'html',
           })
+          node.dataset.katexDone = '1'
         } catch {
           node.textContent = `公式错误：${tex}`
         }
@@ -152,9 +190,9 @@ export function DocumentView({
     return () => {
       cancelled = true
     }
-  }, [html])
+  }, [enhanceKey])
 
-  // 大纲
+  // 大纲：分块挂载完成后重算，保证大纲完整
   useEffect(() => {
     const root = articleRef.current
     if (!root) return
@@ -166,7 +204,7 @@ export function DocumentView({
       }),
     )
     onOutline(items)
-  }, [html, onOutline])
+  }, [enhanceKey, onOutline])
 
   // 滚动联动：取当前视口内最靠上的标题
   useEffect(() => {
@@ -188,13 +226,17 @@ export function DocumentView({
 
     headings.forEach((heading) => observer.observe(heading))
     return () => observer.disconnect()
-  }, [html, onActiveHeading])
+  }, [enhanceKey, onActiveHeading])
 
   const style = { '--doc-scale': String(fontScale) } as CSSProperties
 
   return (
     <article ref={articleRef} className={`md${wide ? ' is-wide' : ''}`} style={style}>
-      <div className="md-body" dangerouslySetInnerHTML={{ __html: html }} />
+      <div className="md-body">
+        {plan.chunks.slice(0, mounted).map((chunk, index) => (
+          <div key={index} className="md-chunk" dangerouslySetInnerHTML={{ __html: chunk }} />
+        ))}
+      </div>
     </article>
   )
 }

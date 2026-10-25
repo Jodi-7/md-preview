@@ -10,6 +10,7 @@
 pnpm dev            # 网页版开发服务器，固定 http://localhost:5180（strictPort）
 pnpm build          # tsc --noEmit + vite build → dist/（构建即校验）
 pnpm typecheck      # 仅类型检查
+pnpm test           # vitest 单元测试（tests/，纯函数：搜索/分块/同步/路径）
 pnpm desktop        # pnpm build && electron .（加载 dist/ 产物）
 pnpm dist           # 打包桌面版到 release/MarkdownPreview/（不用 electron-builder，见 scripts/package-desktop.mjs）
 pnpm scan           # tools/scan-secrets.mjs，开源前敏感信息扫描

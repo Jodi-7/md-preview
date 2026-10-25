@@ -1,5 +1,14 @@
 import { useEffect, useRef, type RefObject } from 'react'
-import { lineAtOffset, measureLineOffsets, previewLineAtTop, scrollPreviewToLine } from '../lib/scrollSync'
+import {
+  editorOffsetForLine,
+  interpolateLine,
+  lineAtOffset,
+  measureLineOffsets,
+  previewLineMarks,
+  scrollPreviewToLine,
+} from '../lib/scrollSync'
+
+const TOP_GAP = 12
 
 interface Options {
   editorRef: RefObject<HTMLTextAreaElement | null>
@@ -62,9 +71,10 @@ export function useScrollSync({ editorRef, mirrorRef, previewRef, text, enabled 
     const onPreviewScroll = () => {
       if (performance.now() < guard.current) return
       guard.current = performance.now() + 120
-      const line = previewLineAtTop(preview)
-      const offset = offsets.current[line]
-      editor.scrollTop = Math.max(0, (offset ?? 0) - 8)
+      // 在相邻映射块之间线性插值，短块密集时也不会出现台阶感
+      const probe = preview.getBoundingClientRect().top + TOP_GAP * 2
+      const line = interpolateLine(previewLineMarks(preview), probe)
+      editor.scrollTop = Math.max(0, editorOffsetForLine(offsets.current, line) - 8)
     }
 
     editor.addEventListener('scroll', onEditorScroll, { passive: true })
